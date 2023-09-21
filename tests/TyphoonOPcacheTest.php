@@ -568,7 +568,7 @@ final class TyphoonOPcacheTest extends TestCase
 
     private function getCurrentErrorHandler(): ?callable
     {
-        $currentHandler = set_error_handler(static fn (): never => throw new \RuntimeException());
+        $currentHandler = set_error_handler(static fn (): bool => true);
         restore_error_handler();
 
         return $currentHandler;
