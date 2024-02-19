@@ -25,7 +25,7 @@ According to [PSR-16](https://www.php-fig.org/psr/psr-16/#12-definitions):
 > If a calling library asks for an item to be saved but does not specify an expiration time, 
 > or specifies a null expiration time or TTL, an Implementing Library MAY use a configured default duration.
 
-Here's how you can configure default duration:
+Here's how you can configure default TTL:
 
 ```php
 use Typhoon\OPcache\TyphoonOPcache;
