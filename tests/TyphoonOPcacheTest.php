@@ -54,7 +54,7 @@ final class TyphoonOPcacheTest extends TestCase
     {
         $cache = new TyphoonOPcache($this->cacheDir);
 
-        $this->expectExceptionObject(new InvalidCacheKeyException($invalidKey));
+        $this->expectExceptionObject(new InvalidCacheKey($invalidKey));
 
         $cache->has($invalidKey);
     }
@@ -127,7 +127,7 @@ final class TyphoonOPcacheTest extends TestCase
     {
         $cache = new TyphoonOPcache($this->cacheDir);
 
-        $this->expectExceptionObject(new InvalidCacheKeyException($invalidKey));
+        $this->expectExceptionObject(new InvalidCacheKey($invalidKey));
 
         $cache->get($invalidKey);
     }
@@ -167,7 +167,7 @@ final class TyphoonOPcacheTest extends TestCase
     {
         $cache = new TyphoonOPcache($this->cacheDir);
 
-        $this->expectExceptionObject(new InvalidCacheKeyException($invalidKey));
+        $this->expectExceptionObject(new InvalidCacheKey($invalidKey));
 
         $cache->getMultiple(['a', 'b', $invalidKey, 'c']);
     }
@@ -212,7 +212,7 @@ final class TyphoonOPcacheTest extends TestCase
     {
         $cache = new TyphoonOPcache($this->cacheDir);
 
-        $this->expectExceptionObject(new InvalidCacheKeyException($invalidKey));
+        $this->expectExceptionObject(new InvalidCacheKey($invalidKey));
 
         $cache->set($invalidKey, 1);
     }
@@ -232,7 +232,7 @@ final class TyphoonOPcacheTest extends TestCase
     {
         $cache = new TyphoonOPcache($this->cacheDir);
 
-        $this->expectExceptionObject(new InvalidCacheKeyException($invalidKey));
+        $this->expectExceptionObject(new InvalidCacheKey($invalidKey));
 
         $cache->setMultiple(['a' => 1, $invalidKey => 2, 'b' => 3]);
     }
@@ -400,7 +400,7 @@ final class TyphoonOPcacheTest extends TestCase
     {
         $cache = new TyphoonOPcache($this->cacheDir);
 
-        $this->expectExceptionObject(new InvalidCacheKeyException($invalidKey));
+        $this->expectExceptionObject(new InvalidCacheKey($invalidKey));
 
         $cache->delete($invalidKey);
     }
@@ -424,7 +424,7 @@ final class TyphoonOPcacheTest extends TestCase
     {
         $cache = new TyphoonOPcache($this->cacheDir);
 
-        $this->expectExceptionObject(new InvalidCacheKeyException($invalidKey));
+        $this->expectExceptionObject(new InvalidCacheKey($invalidKey));
 
         $cache->deleteMultiple(['a', $invalidKey, 'c']);
     }

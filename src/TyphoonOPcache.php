@@ -286,7 +286,7 @@ final class TyphoonOPcache implements CacheInterface
     private function validateKey(string $key): void
     {
         if (preg_match('#[{}()/\\\@:]#', $key)) {
-            throw new InvalidCacheKeyException($key);
+            throw new InvalidCacheKey($key);
         }
     }
 
