@@ -17,22 +17,14 @@ final class TyphoonOPcache implements CacheInterface
 {
     private static ?bool $opcacheEnabled = null;
 
-    private ClockInterface $clock;
-
     private int $scriptStartTime;
 
     public function __construct(
         private readonly string $directory,
         private readonly \DateInterval|int|null $defaultTtl = null,
         private readonly LoggerInterface $logger = new NullLogger(),
-        ?ClockInterface $clock = null,
+        private readonly ClockInterface $clock = new SystemClock(),
     ) {
-        $this->clock = $clock ?? new class () implements ClockInterface {
-            public function now(): \DateTimeImmutable
-            {
-                return new \DateTimeImmutable();
-            }
-        };
         $this->scriptStartTime = $_SERVER['REQUEST_TIME'] ?? $this->clock->now()->getTimestamp();
     }
 
