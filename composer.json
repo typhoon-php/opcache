@@ -17,17 +17,15 @@
         "typhoon/exporter": "^0.2.0@dev"
     },
     "require-dev": {
-        "ergebnis/composer-normalize": "^2.36",
-        "friendsofphp/php-cs-fixer": "^3.26.1",
-        "infection/infection": "^0.27.0",
-        "mikey179/vfsstream": "^1.6",
-        "phpunit/phpunit": "^10.3.4",
-        "phpyh/coding-standard": "^2.5.0",
+        "ergebnis/composer-normalize": "^2.42",
+        "friendsofphp/php-cs-fixer": "^3.49.0",
+        "infection/infection": "^0.27.9",
+        "mikey179/vfsstream": "^1.6.11",
+        "phpunit/phpunit": "^10.5.10",
+        "phpyh/coding-standard": "^2.6.0",
         "psalm/plugin-phpunit": "^0.18.4",
-        "symfony/filesystem": "^6.3",
-        "symfony/finder": "^6.3",
-        "symfony/var-dumper": "^6.3",
-        "vimeo/psalm": "^5.15.0"
+        "symfony/finder": "^6.4 || ^7.0.0",
+        "vimeo/psalm": "^5.22.1"
     },
     "provide": {
         "psr/simple-cache-implementation": "^3.0"
@@ -50,9 +48,9 @@
         "sort-packages": true
     },
     "scripts": {
-        "cleanup": "find var ! -path var ! -path var/.gitignore -exec rm -rf {} +",
         "fixcs": "PHP_CS_FIXER_IGNORE_ENV=1 vendor/bin/php-cs-fixer fix -v",
         "infection": "infection --threads=max --show-mutations",
+        "pre-command-run": "mkdir -p var",
         "psalm": "psalm --show-info=true --no-diff",
         "test": "phpunit"
     }
