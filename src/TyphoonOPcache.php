@@ -10,7 +10,6 @@ use Psr\Log\NullLogger;
 use Psr\SimpleCache\CacheInterface;
 use Typhoon\Exporter\Exporter;
 
-/** @psalm-suppress MixedArgument */
 \define(
     'TYPHOON_OPCACHE_ENABLED',
     \function_exists('opcache_invalidate')
@@ -27,7 +26,7 @@ final class TyphoonOPcache implements CacheInterface
 
     public function __construct(
         private readonly string $directory,
-        private readonly \DateInterval|int|null $defaultTtl = null,
+        private readonly null|\DateInterval|int $defaultTtl = null,
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly ClockInterface $clock = new SystemClock(),
     ) {
@@ -65,7 +64,7 @@ final class TyphoonOPcache implements CacheInterface
      */
     private static function handleErrors(\Closure $function): mixed
     {
-        set_error_handler(static fn (int $level, string $message, string $file, int $line) => throw new CacheErrorException(
+        set_error_handler(static fn(int $level, string $message, string $file, int $line) => throw new CacheErrorException(
             message: $message,
             severity: $level,
             filename: $file,
@@ -83,10 +82,10 @@ final class TyphoonOPcache implements CacheInterface
     {
         self::validateKey($key);
 
-        return self::handleErrors(fn (): mixed => $this->read($this->file($key), $default, $this->clock->now()));
+        return self::handleErrors(fn(): mixed => $this->read($this->file($key), $default, $this->clock->now()));
     }
 
-    public function set(string $key, mixed $value, \DateInterval|int|null $ttl = null): bool
+    public function set(string $key, mixed $value, null|\DateInterval|int $ttl = null): bool
     {
         self::validateKey($key);
 
@@ -172,7 +171,7 @@ final class TyphoonOPcache implements CacheInterface
         });
     }
 
-    public function setMultiple(iterable $values, \DateInterval|int|null $ttl = null): bool
+    public function setMultiple(iterable $values, null|\DateInterval|int $ttl = null): bool
     {
         return self::handleErrors(function () use ($values, $ttl): bool {
             $expiryDate = $this->calculateExpiryDate($ttl);
@@ -314,7 +313,7 @@ final class TyphoonOPcache implements CacheInterface
         return $this->directory . \DIRECTORY_SEPARATOR . $hash[0] . \DIRECTORY_SEPARATOR . $hash[1] . \DIRECTORY_SEPARATOR . substr($hash, 2);
     }
 
-    private function calculateExpiryDate(\DateInterval|int|null $ttl): null|false|\DateTimeImmutable
+    private function calculateExpiryDate(null|\DateInterval|int $ttl): null|false|\DateTimeImmutable
     {
         $ttl ??= $this->defaultTtl;
 
