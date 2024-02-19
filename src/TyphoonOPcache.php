@@ -10,13 +10,19 @@ use Psr\Log\NullLogger;
 use Psr\SimpleCache\CacheInterface;
 use Typhoon\Exporter\Exporter;
 
+/** @psalm-suppress MixedArgument */
+\define(
+    'TYPHOON_OPCACHE_ENABLED',
+    \function_exists('opcache_invalidate')
+        && filter_var(\ini_get('opcache.enable'), FILTER_VALIDATE_BOOL)
+        && (!\in_array(\PHP_SAPI, ['cli', 'phpdbg'], true) || filter_var(\ini_get('opcache.enable_cli'), FILTER_VALIDATE_BOOL)),
+);
+
 /**
- * @psalm-api
+ * @api
  */
 final class TyphoonOPcache implements CacheInterface
 {
-    private static ?bool $opcacheEnabled = null;
-
     private int $scriptStartTime;
 
     public function __construct(
@@ -28,34 +34,72 @@ final class TyphoonOPcache implements CacheInterface
         $this->scriptStartTime = $_SERVER['REQUEST_TIME'] ?? $this->clock->now()->getTimestamp();
     }
 
-    /**
-     * @psalm-suppress MixedArgument
-     * @infection-ignore-all
-     */
-    private static function opcacheEnabled(): bool
+    private static function isDirectoryEmpty(string $directory): bool
     {
-        return self::$opcacheEnabled ??= (\function_exists('opcache_invalidate')
-            && filter_var(\ini_get('opcache.enable'), FILTER_VALIDATE_BOOL)
-            && (!\in_array(\PHP_SAPI, ['cli', 'phpdbg'], true) || filter_var(\ini_get('opcache.enable_cli'), FILTER_VALIDATE_BOOL)));
+        $handle = opendir($directory);
+
+        while (false !== ($entry = readdir($handle))) {
+            if ($entry !== '.' && $entry !== '..') {
+                closedir($handle);
+
+                return false;
+            }
+        }
+
+        closedir($handle);
+
+        return true;
+    }
+
+    private static function validateKey(string $key): void
+    {
+        if (preg_match('#[{}()/\\\@:]#', $key)) {
+            throw new InvalidCacheKey($key);
+        }
+    }
+
+    /**
+     * @template T
+     * @param \Closure(): T $function
+     * @return T
+     */
+    private static function handleErrors(\Closure $function): mixed
+    {
+        set_error_handler(static fn (int $level, string $message, string $file, int $line) => throw new CacheErrorException(
+            message: $message,
+            severity: $level,
+            filename: $file,
+            line: $line,
+        ));
+
+        try {
+            return $function();
+        } finally {
+            restore_error_handler();
+        }
     }
 
     public function get(string $key, mixed $default = null): mixed
     {
-        return $this->handleErrors(fn (): mixed => $this->doGet($this->clock->now(), $key, $default));
+        self::validateKey($key);
+
+        return self::handleErrors(fn (): mixed => $this->read($this->file($key), $default, $this->clock->now()));
     }
 
     public function set(string $key, mixed $value, \DateInterval|int|null $ttl = null): bool
     {
-        return $this->handleErrors(function () use ($key, $value, $ttl): bool {
+        self::validateKey($key);
+
+        return self::handleErrors(function () use ($key, $value, $ttl): bool {
             $expiryDate = $this->calculateExpiryDate($ttl);
 
             if ($expiryDate === false) {
-                $this->doDelete($key);
+                $this->unlink($this->file($key));
 
                 return false;
             }
 
-            $this->doSet($key, $value, $expiryDate);
+            $this->write($this->file($key), $key, $value, $expiryDate);
 
             return true;
         });
@@ -63,8 +107,10 @@ final class TyphoonOPcache implements CacheInterface
 
     public function delete(string $key): bool
     {
-        $this->handleErrors(function () use ($key): void {
-            $this->doDelete($key);
+        self::validateKey($key);
+
+        self::handleErrors(function () use ($key): void {
+            $this->unlink($this->file($key));
         });
 
         return true;
@@ -72,15 +118,15 @@ final class TyphoonOPcache implements CacheInterface
 
     public function clear(): bool
     {
-        $this->handleErrors(function (): void {
-            foreach ($this->iterateDirectory() as $file) {
+        self::handleErrors(function (): void {
+            foreach ($this->scanDirectory() as $file) {
                 if ($file->isDir()) {
                     rmdir($file->getPathname());
 
                     continue;
                 }
 
-                $this->doDeleteFile($file->getPathname());
+                $this->unlink($file->getPathname());
             }
         });
 
@@ -89,19 +135,19 @@ final class TyphoonOPcache implements CacheInterface
 
     public function prune(): void
     {
-        $this->handleErrors(function (): void {
+        self::handleErrors(function (): void {
             $now = $this->clock->now();
 
-            foreach ($this->iterateDirectory() as $file) {
+            foreach ($this->scanDirectory() as $file) {
                 if ($file->isDir()) {
-                    if (scandir($file->getPathname()) === ['.', '..']) {
+                    if (self::isDirectoryEmpty($file->getPathname())) {
                         rmdir($file->getPathname());
                     }
 
                     continue;
                 }
 
-                $this->doGetFromFile($now, $file->getPathname());
+                $this->read($file->getPathname(), null, $now);
             }
         });
     }
@@ -112,12 +158,14 @@ final class TyphoonOPcache implements CacheInterface
      */
     public function getMultiple(iterable $keys, mixed $default = null): array
     {
-        return $this->handleErrors(function () use ($keys, $default): array {
+        return self::handleErrors(function () use ($keys, $default): array {
             $now = $this->clock->now();
             $values = [];
 
             foreach ($keys as $key) {
-                $values[$key] = $this->doGet($now, $key, $default);
+                self::validateKey($key);
+
+                $values[$key] = $this->read($this->file($key), $default, $now);
             }
 
             return $values;
@@ -126,21 +174,25 @@ final class TyphoonOPcache implements CacheInterface
 
     public function setMultiple(iterable $values, \DateInterval|int|null $ttl = null): bool
     {
-        return $this->handleErrors(function () use ($values, $ttl): bool {
+        return self::handleErrors(function () use ($values, $ttl): bool {
             $expiryDate = $this->calculateExpiryDate($ttl);
 
             if ($expiryDate === false) {
-                /** @var string $key */
                 foreach ($values as $key => $_value) {
-                    $this->doDelete($key);
+                    \assert(\is_string($key));
+                    self::validateKey($key);
+
+                    $this->unlink($this->file($key));
                 }
 
                 return false;
             }
 
-            /** @var string $key */
             foreach ($values as $key => $value) {
-                $this->doSet($key, $value, $expiryDate);
+                \assert(\is_string($key));
+                self::validateKey($key);
+
+                $this->write($this->file($key), $key, $value, $expiryDate);
             }
 
             return true;
@@ -149,9 +201,11 @@ final class TyphoonOPcache implements CacheInterface
 
     public function deleteMultiple(iterable $keys): bool
     {
-        $this->handleErrors(function () use ($keys): void {
+        self::handleErrors(function () use ($keys): void {
             foreach ($keys as $key) {
-                $this->doDelete($key);
+                self::validateKey($key);
+
+                $this->unlink($this->file($key));
             }
         });
 
@@ -163,14 +217,7 @@ final class TyphoonOPcache implements CacheInterface
         return $this->get($key, $this) !== $this;
     }
 
-    private function doGet(\DateTimeImmutable $now, string $key, mixed $default = null): mixed
-    {
-        $this->validateKey($key);
-
-        return $this->doGetFromFile($now, $this->file($key), $default);
-    }
-
-    private function doGetFromFile(\DateTimeImmutable $now, string $file, mixed $default = null): mixed
+    private function read(string $file, mixed $default, \DateTimeImmutable $now): mixed
     {
         try {
             /** @var array{string, mixed, ?\DateTimeImmutable} */
@@ -187,7 +234,7 @@ final class TyphoonOPcache implements CacheInterface
         }
 
         if ($item[2] !== null && $item[2] <= $now) {
-            $this->doDeleteFile($file);
+            $this->unlink($file);
 
             return $default;
         }
@@ -195,10 +242,8 @@ final class TyphoonOPcache implements CacheInterface
         return $item[1];
     }
 
-    private function doSet(string $key, mixed $value, ?\DateTimeImmutable $expiryDate): void
+    private function write(string $file, string $key, mixed $value, ?\DateTimeImmutable $expiryDate): void
     {
-        $this->validateKey($key);
-        $file = $this->file($key);
         $directory = \dirname($file);
 
         if (!is_dir($directory)) {
@@ -219,19 +264,13 @@ final class TyphoonOPcache implements CacheInterface
 
         rename($tmp, $file);
 
-        if (self::opcacheEnabled()) {
+        if (TYPHOON_OPCACHE_ENABLED) {
             opcache_invalidate($file, true);
             opcache_compile_file($file);
         }
     }
 
-    private function doDelete(string $key): void
-    {
-        $this->validateKey($key);
-        $this->doDeleteFile($this->file($key));
-    }
-
-    private function doDeleteFile(string $file): void
+    private function unlink(string $file): void
     {
         try {
             unlink($file);
@@ -244,7 +283,7 @@ final class TyphoonOPcache implements CacheInterface
             throw $exception;
         }
 
-        if (self::opcacheEnabled()) {
+        if (TYPHOON_OPCACHE_ENABLED) {
             opcache_invalidate($file, true);
         }
     }
@@ -252,7 +291,7 @@ final class TyphoonOPcache implements CacheInterface
     /**
      * @return iterable<\SplFileInfo>
      */
-    private function iterateDirectory(): iterable
+    private function scanDirectory(): iterable
     {
         if (!is_dir($this->directory)) {
             return [];
@@ -273,13 +312,6 @@ final class TyphoonOPcache implements CacheInterface
 
         /** @infection-ignore-all */
         return $this->directory . \DIRECTORY_SEPARATOR . $hash[0] . \DIRECTORY_SEPARATOR . $hash[1] . \DIRECTORY_SEPARATOR . substr($hash, 2);
-    }
-
-    private function validateKey(string $key): void
-    {
-        if (preg_match('#[{}()/\\\@:]#', $key)) {
-            throw new InvalidCacheKey($key);
-        }
     }
 
     private function calculateExpiryDate(\DateInterval|int|null $ttl): null|false|\DateTimeImmutable
@@ -307,26 +339,5 @@ final class TyphoonOPcache implements CacheInterface
         }
 
         return $expiryDate;
-    }
-
-    /**
-     * @template T
-     * @param \Closure(): T $function
-     * @return T
-     */
-    private function handleErrors(\Closure $function): mixed
-    {
-        set_error_handler(static fn (int $level, string $message, string $file, int $line) => throw new CacheErrorException(
-            message: $message,
-            severity: $level,
-            filename: $file,
-            line: $line,
-        ));
-
-        try {
-            return $function();
-        } finally {
-            restore_error_handler();
-        }
     }
 }
