@@ -39,32 +39,9 @@ final class TyphoonOPcache implements CacheInterface
             && (!\in_array(\PHP_SAPI, ['cli', 'phpdbg'], true) || filter_var(\ini_get('opcache.enable_cli'), FILTER_VALIDATE_BOOL)));
     }
 
-    public function has(string $key): bool
-    {
-        return $this->get($key, $this) !== $this;
-    }
-
     public function get(string $key, mixed $default = null): mixed
     {
         return $this->handleErrors(fn (): mixed => $this->doGet($this->clock->now(), $key, $default));
-    }
-
-    /**
-     * @param iterable<string> $keys
-     * @return array<string, mixed>
-     */
-    public function getMultiple(iterable $keys, mixed $default = null): array
-    {
-        return $this->handleErrors(function () use ($keys, $default): array {
-            $now = $this->clock->now();
-            $values = [];
-
-            foreach ($keys as $key) {
-                $values[$key] = $this->doGet($now, $key, $default);
-            }
-
-            return $values;
-        });
     }
 
     public function set(string $key, mixed $value, \DateInterval|int|null $ttl = null): bool
@@ -84,44 +61,10 @@ final class TyphoonOPcache implements CacheInterface
         });
     }
 
-    public function setMultiple(iterable $values, \DateInterval|int|null $ttl = null): bool
-    {
-        return $this->handleErrors(function () use ($values, $ttl): bool {
-            $expiryDate = $this->calculateExpiryDate($ttl);
-
-            if ($expiryDate === false) {
-                /** @var string $key */
-                foreach ($values as $key => $_value) {
-                    $this->doDelete($key);
-                }
-
-                return false;
-            }
-
-            /** @var string $key */
-            foreach ($values as $key => $value) {
-                $this->doSet($key, $value, $expiryDate);
-            }
-
-            return true;
-        });
-    }
-
     public function delete(string $key): bool
     {
         $this->handleErrors(function () use ($key): void {
             $this->doDelete($key);
-        });
-
-        return true;
-    }
-
-    public function deleteMultiple(iterable $keys): bool
-    {
-        $this->handleErrors(function () use ($keys): void {
-            foreach ($keys as $key) {
-                $this->doDelete($key);
-            }
         });
 
         return true;
@@ -161,6 +104,63 @@ final class TyphoonOPcache implements CacheInterface
                 $this->doGetFromFile($now, $file->getPathname());
             }
         });
+    }
+
+    /**
+     * @param iterable<string> $keys
+     * @return array<string, mixed>
+     */
+    public function getMultiple(iterable $keys, mixed $default = null): array
+    {
+        return $this->handleErrors(function () use ($keys, $default): array {
+            $now = $this->clock->now();
+            $values = [];
+
+            foreach ($keys as $key) {
+                $values[$key] = $this->doGet($now, $key, $default);
+            }
+
+            return $values;
+        });
+    }
+
+    public function setMultiple(iterable $values, \DateInterval|int|null $ttl = null): bool
+    {
+        return $this->handleErrors(function () use ($values, $ttl): bool {
+            $expiryDate = $this->calculateExpiryDate($ttl);
+
+            if ($expiryDate === false) {
+                /** @var string $key */
+                foreach ($values as $key => $_value) {
+                    $this->doDelete($key);
+                }
+
+                return false;
+            }
+
+            /** @var string $key */
+            foreach ($values as $key => $value) {
+                $this->doSet($key, $value, $expiryDate);
+            }
+
+            return true;
+        });
+    }
+
+    public function deleteMultiple(iterable $keys): bool
+    {
+        $this->handleErrors(function () use ($keys): void {
+            foreach ($keys as $key) {
+                $this->doDelete($key);
+            }
+        });
+
+        return true;
+    }
+
+    public function has(string $key): bool
+    {
+        return $this->get($key, $this) !== $this;
     }
 
     private function doGet(\DateTimeImmutable $now, string $key, mixed $default = null): mixed
